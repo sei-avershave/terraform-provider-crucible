@@ -672,6 +672,25 @@ func updateTeams(d *schema.ResourceData, m map[string]string, viewID string) err
 		return err
 	}
 
+	applications := d.Get("application").([]interface{})
+	appStructs := new([]*structs.AppInfo)
+	for _, app := range applications {
+		asMap := app.(map[string]interface{})
+		*appStructs = append(*appStructs, structs.AppInfoFromMap(asMap))
+	}
+
+	// Find the GUID mapping to the name app name provided in each app instance
+	for i, team := range *toCreate {
+		for j, app := range team.AppInstances {
+			for _, parent := range *appStructs {
+				if parent.Name == app.Name {
+					app.Parent = parent.ID
+					(*toCreate)[i].AppInstances[j] = app
+				}
+			}
+		}
+	}
+
 	// Update remote state
 	err = api.DeleteTeams(toDelete, m)
 	if err != nil {
@@ -696,7 +715,7 @@ func updateTeams(d *schema.ResourceData, m map[string]string, viewID string) err
 		return err
 	}
 
-	apps := d.Get("applications")
+	apps := d.Get("application")
 	if apps != nil {
 		err = updateInstances(oldUpdated, toUpdate, apps.([]interface{}), m)
 		if err != nil {
@@ -848,7 +867,7 @@ func updateInstances(old, current *[]*structs.TeamInfo, apps []interface{}, m ma
 				for _, app := range apps {
 					asMap := app.(map[string]interface{})
 					if asMap["name"] == currInst.Name {
-						_, err := api.AddApplication(asMap["id"].(string), oldTeam.ID.(string), currInst.DisplayOrder, m)
+						_, err := api.AddApplication(asMap["app_id"].(string), oldTeam.ID.(string), currInst.DisplayOrder, m)
 						if err != nil {
 							return err
 						}
