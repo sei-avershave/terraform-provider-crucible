@@ -162,7 +162,7 @@ func AppTemplateUpdate(id string, template *structs.AppTemplate, m map[string]st
 func DeleteAppTemplate(id string, m map[string]string) error {
 	auth, err := util.GetAuth(m)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	url := util.GetPlayerApiUrl(m) + "application-templates/" + id

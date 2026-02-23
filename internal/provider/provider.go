@@ -46,7 +46,11 @@ func Provider() *schema.Provider {
 				Type:     schema.TypeString,
 				Required: true,
 				DefaultFunc: func() (interface{}, error) {
-					return os.Getenv("SEI_CRUCIBLE_TOK_URL"), nil
+					// Support both old and new environment variable names for backward compatibility
+				if val := os.Getenv("SEI_CRUCIBLE_TOKEN_URL"); val != "" {
+					return val, nil
+				}
+				return os.Getenv("SEI_CRUCIBLE_TOK_URL"), nil
 				},
 			},
 			"vm_api_url": {

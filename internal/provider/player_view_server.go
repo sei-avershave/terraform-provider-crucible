@@ -475,7 +475,7 @@ func createTeams(d *schema.ResourceData, m map[string]string, teams *[]interface
 	// Add permissions to the teams
 	err = api.AddPermissionsToTeam(teamStructs, m)
 	if err != nil {
-		return nil
+		return err
 	}
 
 	// Set local state

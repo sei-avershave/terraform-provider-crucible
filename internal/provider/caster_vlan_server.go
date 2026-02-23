@@ -81,11 +81,6 @@ func casterVlanCreate(d *schema.ResourceData, m interface{}) error {
 
 	d.SetId(vlan.Id)
 
-	err = d.Set("vlan_id", vlan.VlanId)
-	if err != nil {
-		return err
-	}
-
 	// Set local state
 	err = d.Set("vlan_id", vlan.VlanId)
 	if err != nil {
