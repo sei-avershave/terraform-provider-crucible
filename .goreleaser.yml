@@ -3,7 +3,6 @@
 version: 2
 before:
   hooks:
-    - go mod init crucible_provider
     - go mod tidy
 builds:
   - env:
