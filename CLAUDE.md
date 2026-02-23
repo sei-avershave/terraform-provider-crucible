@@ -15,59 +15,62 @@ This is a Terraform provider for the [Crucible Framework](https://github.com/cmu
 
 ## Technology Stack
 
-- **Language:** Go (1.23+)
-- **Framework:** Terraform Plugin SDK (legacy SDK, not Framework)
+- **Language:** Go (1.21+)
+- **Framework:** Terraform Plugin Framework (v1.4.2+) - migrated from legacy SDK in v1.0.0
 - **Build Tool:** GoReleaser
-- **Authentication:** OAuth2 Password Credentials Grant
-- **HTTP Client:** Standard library `net/http`
+- **Authentication:** OAuth2 Password Credentials Grant with token caching
+- **HTTP Client:** Centralized `CrucibleClient` with automatic retry and rich error messages
 
 ## Project Structure
 
 ```
 terraform-provider-crucible/
 ├── cmd/
-│   └── main.go                           # Plugin entry point
+│   └── main.go                                      # Plugin entry point (Framework provider server)
 ├── internal/
+│   ├── client/
+│   │   ├── client.go                                # Centralized HTTP client with token caching
+│   │   └── client_test.go                           # Client unit tests
 │   ├── provider/
-│   │   ├── provider.go                   # Provider definition and config
-│   │   ├── player_virtual_machine_server.go  # VM resource CRUD
-│   │   ├── player_view_server.go         # View resource CRUD
-│   │   ├── player_application_template_server.go
-│   │   ├── player_user_server.go
-│   │   ├── caster_vlan_server.go
-│   │   └── *_test.go                     # Terraform acceptance tests (mostly commented out)
+│   │   ├── provider_framework.go                    # Plugin Framework provider (v1.0.0+)
+│   │   ├── provider.go                              # Legacy SDK v1 provider (deprecated, will be removed)
+│   │   ├── player_user_resource.go                  # User resource (Framework)
+│   │   ├── player_application_template_resource.go  # App template resource (Framework)
+│   │   ├── caster_vlan_resource.go                  # VLAN resource (Framework)
+│   │   ├── player_virtual_machine_resource.go       # VM resource (Framework)
+│   │   ├── player_view_resource.go                  # View resource (Framework)
+│   │   ├── *_server.go                              # Legacy SDK v1 resources (deprecated)
+│   │   └── *_test.go                                # Terraform acceptance tests
 │   ├── api/
-│   │   ├── vm_api.go                     # VM API wrappers
-│   │   ├── player_api_view.go            # Player View API wrappers
-│   │   ├── player_api_application.go
-│   │   ├── player_api_team.go
-│   │   ├── player_api_user.go
-│   │   ├── player_api_application_template.go
-│   │   └── caster_api_vlan.go
+│   │   ├── vm_api.go                                # VM API wrappers (both Framework and SDK v1)
+│   │   ├── player_api_view.go                       # Player View API wrappers
+│   │   ├── player_api_application.go                # Application API wrappers
+│   │   ├── player_api_team.go                       # Team API wrappers
+│   │   ├── player_api_user.go                       # User API wrappers
+│   │   ├── player_api_application_template.go       # Template API wrappers
+│   │   └── caster_api_vlan.go                       # VLAN API wrappers
 │   ├── structs/
-│   │   └── structs.go                    # Data structures for API payloads
+│   │   └── structs.go                               # Data structures for API payloads
 │   └── util/
-│       └── util.go                       # Authentication, URL normalization, helpers
+│       └── util.go                                  # Legacy utilities (mostly deprecated)
 ├── configs/
-│   └── testConfigs.json                  # Test fixture data
+│   └── testConfigs.json                             # Test fixture data
 ├── docs/
-│   └── index.md                          # Terraform Registry documentation
-├── scripts/
-│   ├── build.bat                         # Windows build script
-│   └── test.bat                          # Windows test script
-├── .goreleaser.yml                       # Multi-platform build configuration
-└── Dockerfile                            # Multi-stage build for releases
+│   └── index.md                                     # Terraform Registry documentation
+├── go.mod                                           # Go module definition (now committed)
+├── MIGRATION.md                                     # v0.x to v1.0.0 migration guide
+├── .goreleaser.yml                                  # Multi-platform build configuration
+└── Dockerfile                                       # Multi-stage build for releases
 ```
 
 ## Common Commands
 
 ### Development Setup
 
-The provider does NOT include `go.mod` in source control. Initialize on first use:
+The provider now includes `go.mod` in source control (as of v1.0.0). Initialize dependencies:
 
 ```bash
-# Initialize Go module (required before any other commands)
-go mod init crucible_provider
+# Download dependencies (required before building)
 go mod tidy
 ```
 
@@ -138,42 +141,57 @@ git push origin v0.1.0
 
 ## Architecture
 
-### Provider Configuration Flow
+### Plugin Framework Architecture (v1.0.0+)
 
-1. **Provider Definition** (`internal/provider/provider.go`):
-   - Defines schema for provider configuration block
-   - Maps environment variables to config fields
-   - `config()` function creates `map[string]string` with credentials/URLs
+The provider now uses Terraform Plugin Framework for type safety and improved developer experience.
 
-2. **Resource Registration** (`internal/provider/provider.go`):
-   - `ResourcesMap` registers resource types to their implementations
-   - Each resource points to a function returning `*schema.Resource`
+1. **Provider Definition** (`internal/provider/provider_framework.go`):
+   - Implements `provider.Provider` interface
+   - Type-safe configuration model using `types.String`, `types.Bool`, etc.
+   - Environment variables override HCL configuration
+   - Creates `CrucibleClient` and passes to all resources via `Configure()`
 
-3. **Resource Implementation** (`internal/provider/*_server.go`):
-   - Each `*_server.go` file defines one resource type
-   - Resource function returns `*schema.Resource` with:
-     - Schema: Field definitions (types, validation, required/optional)
-     - CRUD functions: Create, Read, Update, Delete
-   - CRUD functions receive `*schema.ResourceData` (local state) and `interface{}` (provider config map)
+2. **Centralized HTTP Client** (`internal/client/client.go`):
+   - `CrucibleClient` handles all HTTP communication
+   - OAuth2 token caching with automatic refresh
+   - Rich error extraction from API responses
+   - Retry logic for 401 Unauthorized
+   - Eliminates 940+ lines of duplicated HTTP code
+
+3. **Resource Implementation** (`internal/provider/*_resource.go`):
+   - Each `*_resource.go` file implements `resource.Resource` interface
+   - Type-safe models using Framework types (`types.String`, `types.List`, `types.Object`)
+   - Schema with validators and plan modifiers
+   - CRUD methods with context and structured diagnostics
+   - Import state support
 
 4. **API Layer** (`internal/api/*_api.go`):
-   - Wrapper functions for HTTP calls to Crucible APIs
-   - Each function takes structs and config map, returns error
-   - Handles authentication via `util.GetAuth()`
+   - Each file contains both Framework and legacy SDK v1 functions
+   - Framework functions: `func(ctx context.Context, client *CrucibleClient, ...) error`
+   - SDK v1 functions: `func(..., m map[string]string) error` (deprecated, will be removed)
+   - Uses `CrucibleClient` methods: `DoGet()`, `DoPost()`, `DoPut()`, `DoDelete()`
 
 5. **Data Structures** (`internal/structs/structs.go`):
-   - Defines Go structs for API payloads
-   - `ToMap()` methods convert structs to Terraform state maps
-   - `FromMap()` functions create structs from Terraform state
+   - Go structs for API payloads with JSON tags
+   - Framework resources use these directly, no ToMap/FromMap needed
+   - Legacy SDK v1 code still uses ToMap/FromMap (will be removed)
 
-### Authentication Flow
+### Authentication Flow (v1.0.0+)
 
 ```
-util.GetAuth(config map)
-  → OAuth2 Password Credentials Token exchange
-  → Returns access token string
-  → Token added to HTTP request: "Authorization: Bearer <token>"
+CrucibleClient.GetToken(ctx)
+  → Check cached token (fast path)
+  → If expired or missing:
+    → OAuth2 Password Credentials Token exchange
+    → Cache token with expiry
+  → Return access token
+  → DoRequest() injects: "Authorization: Bearer <token>"
+  → On 401, invalidate cache and retry once
 ```
+
+### Legacy Architecture (v0.9.x - SDK v1)
+
+The legacy architecture used `*_server.go` files with manual state management and per-request authentication. This code is deprecated and will be removed in a future release. See git tag `v0.9.0` for the last SDK v1 version.
 
 ### Resource CRUD Pattern
 
@@ -209,27 +227,29 @@ type AppInfo struct {
 
 ### URL Normalization
 
-All API URLs are normalized in `util.GetApiUrl()`:
+All API URLs are normalized in `client.normalizeAPIURL()`:
 - Strips trailing `/` and `/api`
 - Appends `/api/`
 - Example: `https://player.crucible.dev` → `https://player.crucible.dev/api/`
 
-### State Management
+### State Management (Framework)
 
-Terraform state is stored as `map[string]interface{}`:
-- Read from `schema.ResourceData` via `d.Get(key)`
-- Written to `schema.ResourceData` via `d.Set(key, value)`
-- Structs converted to/from maps using `ToMap()` and `FromMap()` methods
+Plugin Framework uses type-safe models:
+- Resources define model structs with `tfsdk` tags
+- Framework handles serialization/deserialization automatically
+- `req.Plan.Get(ctx, &model)` - read planned values
+- `resp.State.Set(ctx, &model)` - write state values
+- No manual `ToMap()`/`FromMap()` conversions needed
 
 ### Ordering Requirements
 
-**IMPORTANT:** Resources within views must be alphabetically ordered to avoid spurious state changes:
-- Applications ordered by `name`
-- Teams ordered by `name`
-- Users within teams ordered by `user_id`
-- App instances within teams ordered by `name`
+**IMPORTANT:** Resources within views are automatically sorted alphabetically to avoid spurious state changes:
+- Applications sorted by `name` in Read()
+- Teams sorted by `name` in Create()
+- Users within teams sorted by `user_id`
+- App instances within teams sorted by `name`
 
-This is handled in the provider's comparison logic - if order changes but content doesn't, Terraform won't detect a change.
+Framework's built-in comparison handles this - if only order changes, no update is triggered.
 
 ## Configuration
 
@@ -241,14 +261,16 @@ Required environment variables (or set in provider block):
 export SEI_CRUCIBLE_USERNAME=<username>
 export SEI_CRUCIBLE_PASSWORD=<password>
 export SEI_CRUCIBLE_AUTH_URL=<auth service URL>
-export SEI_CRUCIBLE_TOK_URL=<token endpoint URL>
+export SEI_CRUCIBLE_TOKEN_URL=<token endpoint URL>  # v1.0.0+: renamed from SEI_CRUCIBLE_TOK_URL
 export SEI_CRUCIBLE_CLIENT_ID=<OAuth client ID>
 export SEI_CRUCIBLE_CLIENT_SECRET=<OAuth client secret>
-export SEI_CRUCIBLE_CLIENT_SCOPES='["scope1","scope2"]'
+export SEI_CRUCIBLE_CLIENT_SCOPES='["player-api","vm-api","caster-api"]'
 export SEI_CRUCIBLE_VM_API_URL=<VM API base URL>
 export SEI_CRUCIBLE_PLAYER_API_URL=<Player API base URL>
 export SEI_CRUCIBLE_CASTER_API_URL=<Caster API base URL>
 ```
+
+**Note:** The old `SEI_CRUCIBLE_TOK_URL` is still supported for backward compatibility but is deprecated.
 
 ### Resource Examples
 
@@ -272,8 +294,8 @@ resource "crucible_player_view" "example" {
 
   application {
     name               = "testApp"
-    embeddable         = "false"  # Note: Quoted boolean
-    load_in_background = "true"   # Note: Quoted boolean
+    embeddable         = false  # v1.0.0+: proper boolean
+    load_in_background = true   # v1.0.0+: proper boolean
   }
 
   team {
@@ -289,19 +311,27 @@ resource "crucible_player_view" "example" {
 }
 ```
 
-## Important Quirks
+## Version-Specific Notes
 
-### Quoted Booleans in Views
+### v1.0.0+ Boolean Syntax (Plugin Framework)
 
-Due to Terraform's type system, `embeddable` and `load_in_background` fields in application blocks within views MUST be quoted strings:
+The `embeddable` and `load_in_background` fields in application blocks now use proper boolean types:
 ```hcl
 application {
-  embeddable = "false"  # Correct
-  # embeddable = false  # WRONG - will cause errors
+  embeddable = false  # ✅ Correct in v1.0.0+
 }
 ```
 
-This quirk does NOT apply to top-level resources like `crucible_player_application_template`.
+### v0.9.x Boolean Syntax (Legacy SDK)
+
+**If using v0.9.x or earlier**, these fields require quoted strings:
+```hcl
+application {
+  embeddable = "false"  # ✅ Correct in v0.9.x
+}
+```
+
+**See [MIGRATION.md](./MIGRATION.md) for upgrade instructions.**
 
 ### No go.mod in Source Control
 

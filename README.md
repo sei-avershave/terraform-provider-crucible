@@ -1,17 +1,26 @@
-# Terraform Provider Crucible Readme
+# Terraform Provider Crucible
 
 [Terraform](https://www.terraform.io/) is an Infrastructure as Code tool for managing cloud-based infrastructure. A provider is a plugin to Terraform that allows for the management of a given resource type. That is, a provider supplies the logic needed to manage infrastructure. There are three main resource types managed by this provider: virtual machines, views, and application templates. They are detailed below.
 
+## Migration from v0.x to v1.0.0
+
+**IMPORTANT:** If you're upgrading from v0.9.x or earlier, please read [MIGRATION.md](./MIGRATION.md) for breaking changes and upgrade instructions. Key changes:
+- Boolean fields in view applications now use proper boolean syntax (not quoted strings)
+- Environment variable `SEI_CRUCIBLE_TOK_URL` renamed to `SEI_CRUCIBLE_TOKEN_URL` (old name still supported)
+- Improved error messages with detailed API responses
+
+## Configuration
+
 In order to use the provider, several environment variables must be set:
 
-```
+```bash
 SEI_CRUCIBLE_USERNAME=<your username>
 SEI_CRUCIBLE_PASSWORD=<your password>
 SEI_CRUCIBLE_AUTH_URL=<the url to the authentication service>
-SEI_CRUCIBLE_TOK_URL=<the url where you get your player authentication token>
+SEI_CRUCIBLE_TOKEN_URL=<the url where you get your authentication token>
 SEI_CRUCIBLE_CLIENT_ID=<your client ID for authentication>
 SEI_CRUCIBLE_CLIENT_SECRET=<your client secret for authentication>
-SEI_CRUCIBLE_CLIENT_SCOPES='["<Scopes for authorising users to services>"]'
+SEI_CRUCIBLE_CLIENT_SCOPES='["player-api","vm-api","caster-api"]'
 SEI_CRUCIBLE_VM_API_URL=<the url to the VM API>
 SEI_CRUCIBLE_PLAYER_API_URL=<the url to the Player API>
 SEI_CRUCIBLE_CASTER_API_URL=<the url to the Caster API>
@@ -99,26 +108,26 @@ The Provider can also interact with Crucible's Player API in order to manage vie
 
 An example configuration:
 
-```
+```hcl
 resource "crucible_player_view" "example" {
-	name = "example"
+	name        = "example"
 	description = "This was created from terraform!"
-	status = "Active"
+	status      = "Active"
 
-	application	{
-		name = "testApp"
-		embeddable = "false"
-		load_in_background = "true"
+	application {
+		name               = "testApp"
+		embeddable         = false  # Note: proper boolean in v1.0.0+
+		load_in_background = true   # Note: proper boolean in v1.0.0+
 	}
 
 	team {
 		name = "test_team"
-		role = SomeRole
+		role = "SomeRole"
 		user {
 			user_id = "6fb5b293-668b-4eb6-b614-dfdd6b0e0acf"
 		}
 		app_instance {
-			name = "testApp"
+			name          = "testApp"
 			display_order = 0
 		}
 	}
@@ -139,9 +148,9 @@ Inside of the resource block, there is information to configure both the view it
 
 ### Applications
 
-There do not have to be any applications within a view, so no application blocks are required. However, for each application block that is set, certain fields within it must be set. See the above configuration example for the the syntax of creating an application block. The fields of an application are outlined below. Applications should be placed in the configuration in alphabetical order by name. Note that numbers come before letters in an alphabetical ordering.
+There do not have to be any applications within a view, so no application blocks are required. However, for each application block that is set, certain fields within it must be set. See the above configuration example for the syntax of creating an application block. The fields of an application are outlined below. Applications should be placed in the configuration in alphabetical order by name. Note that numbers come before letters in an alphabetical ordering.
 
-Due to a quirk in Terraform's type system, values for `embeddable` and `load_in_background` must be wrapped in quotes. They are still boolean fields; their values just need to be wrapped in quotes as is shown above.
+**Note for v1.0.0+:** The `embeddable` and `load_in_background` fields now use proper boolean types (true/false without quotes). If you're using v0.9.x or earlier, these must be quoted strings. See [MIGRATION.md](./MIGRATION.md) for upgrade details.
 
 <ul>
 <li> app_id: The GUID of this application. Optional. If not set, it will be generated internally.
