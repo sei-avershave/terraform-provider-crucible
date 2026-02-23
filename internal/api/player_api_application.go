@@ -5,6 +5,8 @@ package api
 
 import (
 	"bytes"
+	"context"
+	"crucible_provider/internal/client"
 	"crucible_provider/internal/structs"
 	"crucible_provider/internal/util"
 	"encoding/json"
@@ -13,7 +15,31 @@ import (
 	"net/http"
 )
 
-// -------------------- API Wrappers --------------------
+// -------------------- Plugin Framework functions (new) --------------------
+
+// CreateApps creates applications in a view using the centralized client.
+func CreateApps(ctx context.Context, c *client.CrucibleClient, apps *[]structs.AppInfo, viewID string) error {
+	for i := range *apps {
+		app := &(*apps)[i]
+		app.ViewID = viewID
+
+		url := c.GetPlayerAPIURL() + "views/" + viewID + "/applications"
+		var result map[string]interface{}
+
+		if err := c.DoPost(ctx, url, app, &result); err != nil {
+			return fmt.Errorf("failed to create application '%v': %w", app.Name, err)
+		}
+
+		// Store the application ID
+		if id, ok := result["id"].(string); ok {
+			app.ID = id
+		}
+	}
+
+	return nil
+}
+
+// -------------------- API Wrappers (SDK v1 - legacy) --------------------
 
 // CreateApps creates an application for each of the structs passed.
 //
